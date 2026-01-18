@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Vozes Comuns</title>
+<style>
+body{font-family:Arial;margin:0;background:#f4f4f4}
+header{background:#234;color:#fff;padding:15px;text-align:center}
+nav button{margin:5px;padding:8px 15px}
+section{display:none;padding:20px}
+.card{background:#fff;padding:10px;margin:10px 0}
+textarea{width:100%;height:220px}
+button{cursor:pointer;margin:3px}
+pre{white-space:pre-wrap}
+</style>
+</head>
+
+<body>
+
+<header>
+<h1>Vozes Comuns</h1>
+<nav>
+<button onclick="show('home')">Início</button>
+<button onclick="show('books')">Livros</button>
+<button onclick="show('newBook')">Novo Livro</button>
+</nav>
+</header>
+
+<section id="home">
+<h2>Bem-vindo</h2>
+<p>Crie livros e capítulos com histórias reais.</p>
+</section>
+
+<section id="books">
+<h2>Livros</h2>
+<div id="bookList"></div>
+</section>
+
+<section id="newBook">
+<h2>Novo Livro</h2>
+<input id="bookAuthor" placeholder="Autor"><br><br>
+<input id="bookTitle" placeholder="Título do livro"><br><br>
+<button onclick="createBook()">Criar Livro</button>
+</section>
+
+<section id="chapters">
+<h2 id="bookName"></h2>
+<button onclick="show('newChapter')">Novo Capítulo</button>
+<div id="chapterList"></div>
+<button onclick="show('books')">Voltar</button>
+</section>
+
+<section id="newChapter">
+<h2>Novo Capítulo</h2>
+<input id="chapterTitle" placeholder="Título do capítulo"><br><br>
+<textarea id="chapterText" placeholder="Texto do capítulo"></textarea><br>
+<button onclick="saveChapter()">Salvar Capítulo</button>
+<button onclick="show('chapters')">Cancelar</button>
+</section>
+
+<section id="read">
+<h2 id="rTitle"></h2>
+<pre id="rText"></pre>
+<button onclick="show('chapters')">Voltar</button>
+</section>
+
+<script>
+let currentBook = null
+
+function show(id){
+  document.querySelectorAll('section').forEach(s=>s.style.display='none')
+  document.getElementById(id).style.display='block'
+  if(id==='books') loadBooks()
+  if(id==='chapters') loadChapters()
+}
+
+function getData(){
+  return JSON.parse(localStorage.getItem('books')||'[]')
+}
+function setData(d){
+  localStorage.setItem('books',JSON.stringify(d))
+}
+
+function createBook(){
+  const d=getData()
+  d.push({
+    author:bookAuthor.value||'Anônimo',
+    title:bookTitle.value,
+    chapters:[]
+  })
+  setData(d)
+  bookAuthor.value=bookTitle.value=''
+  show('books')
+}
+
+function loadBooks(){
+  const d=getData()
+  bookList.innerHTML=''
+  d.forEach((b,i)=>{
+    bookList.innerHTML+=`
+    <div class="card">
+    <b>${b.title}</b><br>
+    <i>${b.author}</i><br><br>
+    <button onclick="openBook(${i})">Abrir</button>
+    </div>`
+  })
+}
+
+function openBook(i){
+  currentBook=i
+  bookName.innerText=getData()[i].title
+  show('chapters')
+}
+
+function loadChapters(){
+  const d=getData()
+  const book=d[currentBook]
+  chapterList.innerHTML=''
+  book.chapters.forEach((c,i)=>{
+    chapterList.innerHTML+=`
+    <div class="card">
+    <b>${c.title}</b><br><br>
+    <button onclick="read(${i})">Ler</button>
+    <button onclick="delChapter(${i})">Excluir</button>
+    </div>`
+  })
+}
+
+function saveChapter(){
+  const d=getData()
+  d[currentBook].chapters.push({
+    title:chapterTitle.value,
+    text:chapterText.value
+  })
+  setData(d)
+  chapterTitle.value=chapterText.value=''
+  show('chapters')
+}
+
+function read(i){
+  const c=getData()[currentBook].chapters[i]
+  rTitle.innerText=c.title
+  rText.innerText=c.text
+  show('read')
+}
+
+function delChapter(i){
+  if(confirm('Excluir capítulo?')){
+    const d=getData()
+    d[currentBook].chapters.splice(i,1)
+    setData(d)
+    loadChapters()
+  }
+}
+
+show('home')
+</script>
+
+</body>
+</html>
