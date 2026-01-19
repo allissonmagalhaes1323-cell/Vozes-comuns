@@ -6,7 +6,7 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, doc, getDoc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBc1CnD5D2YJvooqtUzOZKxElj-efqc-eM",
@@ -19,7 +19,6 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
-
 window.db = db;
 </script>
 
@@ -117,6 +116,7 @@ async function loadBooks(){
       <b>${b.title}</b><br>
       <i>${b.author}</i><br><br>
       <button onclick="openBook('${d.id}','${b.title}')">Abrir</button>
+      <button onclick="deleteBook('${d.id}')">Excluir Livro</button>
     </div>`;
   });
 }
@@ -162,6 +162,19 @@ window.delChapter = async function(id){
     await deleteDoc(doc(db,"books",currentBookId,"chapters",id));
     loadChapters();
   }
+}
+
+window.deleteBook = async function(bookId){
+  if(!confirm("Excluir este livro e TODOS os capítulos?")) return;
+
+  const chaptersSnap = await getDocs(collection(db,"books",bookId,"chapters"));
+  for(const c of chaptersSnap.docs){
+    await deleteDoc(c.ref);
+  }
+
+  await deleteDoc(doc(db,"books",bookId));
+  alert("Livro excluído com sucesso.");
+  loadBooks();
 }
 
 show('home');
