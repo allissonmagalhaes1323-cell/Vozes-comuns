@@ -11,7 +11,9 @@ import {
   deleteDoc, updateDoc, increment
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
-  getAuth, onAuthStateChanged
+  getAuth, createUserWithEmailAndPassword,
+  signInWithEmailAndPassword, signOut,
+  onAuthStateChanged, updateProfile
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const firebaseConfig = {
@@ -38,7 +40,6 @@ nav button{margin:5px;padding:8px 15px}
 section{display:none;padding:20px}
 .card{background:#fff;padding:10px;margin:10px 0}
 textarea{width:100%;height:220px}
-button{cursor:pointer;margin:3px}
 .genres label{display:inline-block;margin-right:10px}
 </style>
 </head>
@@ -47,12 +48,23 @@ button{cursor:pointer;margin:3px}
 
 <header>
 <h1>Vozes Comuns</h1>
+<p id="userInfo"></p>
 <nav>
 <button onclick="show('home')">Início</button>
 <button onclick="show('books')">Livros</button>
 <button onclick="show('newBook')">Novo Livro</button>
+<button onclick="logout()">Sair</button>
 </nav>
 </header>
+
+<section id="login">
+<h2>Entrar / Criar Conta</h2>
+<input id="name" placeholder="Seu nome"><br><br>
+<input id="email" placeholder="Email"><br><br>
+<input id="password" type="password" placeholder="Senha"><br><br>
+<button onclick="login()">Entrar</button>
+<button onclick="register()">Criar Conta</button>
+</section>
 
 <section id="home">
 <h2>Bem-vindo</h2>
@@ -66,11 +78,10 @@ button{cursor:pointer;margin:3px}
 
 <section id="newBook">
 <h2>Novo Livro</h2>
-
 <input id="bookTitle" placeholder="Título do livro"><br><br>
 
 <h3>Gêneros</h3>
-<div class="genres" id="genreList"></div><br>
+<div id="genreList"></div><br>
 
 <button onclick="createBook()">Criar Livro</button>
 </section>
@@ -92,13 +103,19 @@ button{cursor:pointer;margin:3px}
 
 <script type="module">
 import {
-  collection, addDoc, getDocs, deleteDoc, doc,
+  collection, addDoc, getDocs, doc,
   updateDoc, increment
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  updateProfile
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
-let currentBookId = null;
 let currentUser = null;
+let currentBookId = null;
 
 const GENRES = [
   "Ação","Aventura","Biografia","Crônica","Drama",
@@ -106,36 +123,51 @@ const GENRES = [
   "Horror / Terror","Investigação / Mistério","LGBT+",
   "Poesia","Política","Romance","Relatos Reais",
   "Religião / Espiritualidade","Superação","Suspense",
-  "Tragicomédia","Vida Cotidiana"
+  "Vida Cotidiana"
 ];
-
-function renderGenres(){
-  genreList.innerHTML = "";
-  GENRES.forEach(g=>{
-    genreList.innerHTML += `
-      <label>
-        <input type="checkbox" value="${g}"> ${g}
-      </label>
-    `;
-  });
-}
 
 function show(id){
   document.querySelectorAll("section").forEach(s=>s.style.display="none");
   document.getElementById(id).style.display="block";
   if(id==="books") loadBooks();
 }
-
 window.show = show;
 
-onAuthStateChanged(auth, user=>{
-  currentUser = user;
-  renderGenres();
-  show("home");
+onAuthStateChanged(auth,user=>{
+  if(user){
+    currentUser = user;
+    userInfo.innerText = `Logado como: ${user.displayName} (${user.email})`;
+    renderGenres();
+    show("home");
+  }else{
+    show("login");
+  }
 });
 
+function renderGenres(){
+  genreList.innerHTML="";
+  GENRES.forEach(g=>{
+    genreList.innerHTML+=`
+      <label><input type="checkbox" value="${g}"> ${g}</label>
+    `;
+  });
+}
+
+window.login = async function(){
+  await signInWithEmailAndPassword(auth,email.value,password.value);
+}
+
+window.register = async function(){
+  const cred = await createUserWithEmailAndPassword(auth,email.value,password.value);
+  await updateProfile(cred.user,{displayName:name.value});
+}
+
+window.logout = async function(){
+  await signOut(auth);
+}
+
 async function createBook(){
-  if(!currentUser) return alert("Faça login.");
+  if(!currentUser) return alert("Faça login");
 
   const tags = [...document.querySelectorAll("#genreList input:checked")]
     .map(c=>c.value);
@@ -145,12 +177,12 @@ async function createBook(){
     authorName: currentUser.displayName,
     authorEmail: currentUser.email,
     authorId: currentUser.uid,
-    tags: tags,
+    tags,
     views: 0,
     createdAt: Date.now()
   });
 
-  bookTitle.value = "";
+  bookTitle.value="";
   renderGenres();
   show("books");
 }
@@ -160,37 +192,26 @@ async function loadBooks(){
   bookList.innerHTML="";
   const snap = await getDocs(collection(db,"books"));
   snap.forEach(d=>{
-    const b = d.data();
-    bookList.innerHTML += `
+    const b=d.data();
+    bookList.innerHTML+=`
       <div class="card">
         <b>${b.title}</b><br>
         <i>${b.authorName}</i><br>
         <small>${b.authorEmail}</small><br>
-        <p>🏷️ ${(b.tags||[]).join(", ")}</p>
-        <p>👁️ ${b.views||0} visualizações</p>
-        <button onclick="openBook('${d.id}','${b.title}')">Abrir</button>
+        🏷️ ${(b.tags||[]).join(", ")}<br>
+        👁️ ${b.views||0}
+        <br><button onclick="openBook('${d.id}','${b.title}')">Abrir</button>
       </div>
     `;
   });
 }
 
 window.openBook = async function(id,title){
-  currentBookId = id;
-  bookName.innerText = title;
+  currentBookId=id;
+  bookName.innerText=title;
   await updateDoc(doc(db,"books",id),{views:increment(1)});
   show("chapters");
 }
-
-async function saveChapter(){
-  await addDoc(collection(db,"books",currentBookId,"chapters"),{
-    title: chapterTitle.value,
-    text: chapterText.value
-  });
-  chapterTitle.value = chapterText.value = "";
-  show("chapters");
-}
-window.saveChapter = saveChapter;
-
 </script>
 
 </body>
