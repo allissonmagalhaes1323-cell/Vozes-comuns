@@ -6,7 +6,14 @@
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getFirestore, collection, addDoc, getDocs, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, addDoc, getDocs, doc, deleteDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { 
+  getAuth,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged
+} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBc1CnD5D2YJvooqtUzOZKxElj-efqc-eM",
@@ -19,7 +26,10 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
+
 window.db = db;
+window.auth = auth;
 </script>
 
 <style>
@@ -42,8 +52,19 @@ pre{white-space:pre-wrap}
 <button onclick="show('home')">Início</button>
 <button onclick="show('books')">Livros</button>
 <button onclick="show('newBook')">Novo Livro</button>
+<button onclick="show('auth')">Login</button>
 </nav>
 </header>
+
+<section id="auth">
+<h2>Login do Autor</h2>
+<input id="email" placeholder="Email"><br><br>
+<input id="password" type="password" placeholder="Senha"><br><br>
+<button onclick="login()">Entrar</button>
+<button onclick="register()">Cadastrar</button>
+<button onclick="logout()">Sair</button>
+<p id="authStatus"></p>
+</section>
 
 <section id="home">
 <h2>Bem-vindo</h2>
@@ -84,9 +105,8 @@ pre{white-space:pre-wrap}
 </section>
 
 <script type="module">
-import { collection, addDoc, getDocs, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-
 let currentBookId = null;
+let currentUser = null;
 
 function show(id){
   document.querySelectorAll('section').forEach(s=>s.style.display='none');
@@ -96,10 +116,37 @@ function show(id){
 }
 window.show = show;
 
+onAuthStateChanged(auth, user => {
+  currentUser = user;
+  authStatus.innerText = user ? `Logado como: ${user.email}` : "Não logado";
+});
+
+window.register = async function(){
+  try{
+    await createUserWithEmailAndPassword(auth, email.value, password.value);
+    alert("Conta criada!");
+  }catch(e){ alert(e.message); }
+}
+
+window.login = async function(){
+  try{
+    await signInWithEmailAndPassword(auth, email.value, password.value);
+    alert("Login feito!");
+  }catch(e){ alert(e.message); }
+}
+
+window.logout = async function(){
+  await signOut(auth);
+  alert("Saiu da conta");
+}
+
 async function createBook(){
+  if(!currentUser){ alert("Faça login"); return; }
+
   await addDoc(collection(db, "books"), {
     author: bookAuthor.value || "Anônimo",
-    title: bookTitle.value
+    title: bookTitle.value,
+    uid: currentUser.uid
   });
   bookAuthor.value = bookTitle.value = "";
   show('books');
@@ -107,73 +154,71 @@ async function createBook(){
 window.createBook = createBook;
 
 async function loadBooks(){
-  bookList.innerHTML = "";
+  bookList.innerHTML="";
   const snap = await getDocs(collection(db,"books"));
   snap.forEach(d=>{
-    const b = d.data();
-    bookList.innerHTML += `
+    const b=d.data();
+    bookList.innerHTML+=`
     <div class="card">
-      <b>${b.title}</b><br>
-      <i>${b.author}</i><br><br>
-      <button onclick="openBook('${d.id}','${b.title}')">Abrir</button>
-      <button onclick="deleteBook('${d.id}')">Excluir Livro</button>
+    <b>${b.title}</b><br>
+    <i>${b.author}</i><br><br>
+    <button onclick="openBook('${d.id}','${b.title}')">Abrir</button>
+    ${currentUser && b.uid===currentUser.uid ? 
+      `<button onclick="deleteBook('${d.id}')">Excluir Livro</button>` : ``}
     </div>`;
   });
 }
 
-window.openBook = function(id,title){
-  currentBookId = id;
-  bookName.innerText = title;
+window.openBook=function(id,title){
+  currentBookId=id;
+  bookName.innerText=title;
   show('chapters');
 }
 
 async function saveChapter(){
-  await addDoc(collection(db, "books", currentBookId, "chapters"), {
-    title: chapterTitle.value,
-    text: chapterText.value
+  await addDoc(collection(db,"books",currentBookId,"chapters"),{
+    title:chapterTitle.value,
+    text:chapterText.value
   });
-  chapterTitle.value = chapterText.value = "";
+  chapterTitle.value=chapterText.value="";
   show('chapters');
 }
-window.saveChapter = saveChapter;
+window.saveChapter=saveChapter;
 
 async function loadChapters(){
-  chapterList.innerHTML = "";
-  const snap = await getDocs(collection(db,"books",currentBookId,"chapters"));
+  chapterList.innerHTML="";
+  const snap=await getDocs(collection(db,"books",currentBookId,"chapters"));
   snap.forEach(d=>{
-    const c = d.data();
-    chapterList.innerHTML += `
+    const c=d.data();
+    chapterList.innerHTML+=`
     <div class="card">
-      <b>${c.title}</b><br><br>
-      <button onclick="read('${c.title}','${encodeURIComponent(c.text)}')">Ler</button>
-      <button onclick="delChapter('${d.id}')">Excluir</button>
+    <b>${c.title}</b><br><br>
+    <button onclick="read('${c.title}','${encodeURIComponent(c.text)}')">Ler</button>
+    <button onclick="delChapter('${d.id}')">Excluir</button>
     </div>`;
   });
 }
 
-window.read = function(t,txt){
-  rTitle.innerText = t;
-  rText.innerText = decodeURIComponent(txt);
+window.read=function(t,txt){
+  rTitle.innerText=t;
+  rText.innerText=decodeURIComponent(txt);
   show('read');
 }
 
-window.delChapter = async function(id){
+window.delChapter=async function(id){
   if(confirm("Excluir capítulo?")){
     await deleteDoc(doc(db,"books",currentBookId,"chapters",id));
     loadChapters();
   }
 }
 
-window.deleteBook = async function(bookId){
-  if(!confirm("Excluir este livro e TODOS os capítulos?")) return;
+window.deleteBook=async function(bookId){
+  if(!confirm("Excluir livro inteiro?"))return;
 
-  const chaptersSnap = await getDocs(collection(db,"books",bookId,"chapters"));
-  for(const c of chaptersSnap.docs){
-    await deleteDoc(c.ref);
-  }
+  const snap=await getDocs(collection(db,"books",bookId,"chapters"));
+  for(const c of snap.docs) await deleteDoc(c.ref);
 
   await deleteDoc(doc(db,"books",bookId));
-  alert("Livro excluído com sucesso.");
   loadBooks();
 }
 
