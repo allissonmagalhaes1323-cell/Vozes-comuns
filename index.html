@@ -24,6 +24,7 @@ import {
   getDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+/* ========= FIREBASE ========= */
 const firebaseConfig = {
   apiKey: "AIzaSyBc1CnD5D2YJvooqtUzOZKxElj-efqc-eM",
   authDomain: "vozes-comuns.firebaseapp.com",
@@ -37,12 +38,13 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
+/* ========= ESTADO ========= */
 let currentUser = null;
 let currentBookId = null;
 let currentBookOwner = null;
+let allBooks = []; // 🔥 usado pela busca
 
 /* ========= AUTH ========= */
-
 window.register = async () =>
   createUserWithEmailAndPassword(auth, email.value, password.value);
 
@@ -58,7 +60,6 @@ onAuthStateChanged(auth, user => {
 });
 
 /* ========= UI ========= */
-
 window.show = id => {
   document.querySelectorAll("section").forEach(s=>s.style.display="none");
   document.getElementById(id).style.display="block";
@@ -67,9 +68,8 @@ window.show = id => {
 };
 
 /* ========= BOOKS ========= */
-
 window.createBook = async () => {
-  if(!currentUser) return alert("Faça login");
+  if(!currentUser) return alert("Faça login para criar livro");
 
   await addDoc(collection(db,"books"),{
     title: bookTitle.value,
@@ -83,24 +83,48 @@ window.createBook = async () => {
 };
 
 async function loadBooks(){
-  bookList.innerHTML="";
-  const snap = await getDocs(collection(db,"books"));
+  bookList.innerHTML="Carregando...";
+  allBooks = [];
 
+  const snap = await getDocs(collection(db,"books"));
   snap.forEach(d=>{
-    const b=d.data();
+    allBooks.push({ id:d.id, ...d.data() });
+  });
+
+  renderBooks(allBooks);
+}
+
+function renderBooks(list){
+  bookList.innerHTML="";
+  if(list.length === 0){
+    bookList.innerHTML="<p>Nenhum livro encontrado.</p>";
+    return;
+  }
+
+  list.forEach(b=>{
     bookList.innerHTML+=`
       <div class="card">
         <b>${b.title}</b><br>
         <i>${b.author}</i><br><br>
-        <button onclick="openBook('${d.id}')">Abrir</button>
+        <button onclick="openBook('${b.id}')">Abrir</button>
         ${
           currentUser && b.uid===currentUser.uid
-          ? `<button onclick="deleteBook('${d.id}')">Excluir</button>`
+          ? `<button onclick="deleteBook('${b.id}')">Excluir</button>`
           : ""
         }
       </div>`;
   });
 }
+
+/* 🔍 BUSCA */
+window.searchBooks = txt => {
+  const t = txt.toLowerCase();
+  const filtered = allBooks.filter(b =>
+    b.title.toLowerCase().includes(t) ||
+    b.author.toLowerCase().includes(t)
+  );
+  renderBooks(filtered);
+};
 
 window.openBook = async id => {
   currentBookId=id;
@@ -120,7 +144,6 @@ window.deleteBook = async id => {
 };
 
 /* ========= CHAPTERS ========= */
-
 async function loadChapters(){
   chapterList.innerHTML="";
   newChapterBtn.style.display =
@@ -159,7 +182,7 @@ window.saveChapter = async () => {
 };
 
 window.delChapter = async id => {
-  if(confirm("Excluir capítulo?")){
+  if(confirm("Excluir capítulo")){
     await deleteDoc(doc(db,"books",currentBookId,"chapters",id));
     loadChapters();
   }
@@ -182,6 +205,7 @@ section{display:none;padding:20px}
 .card{background:#fff;padding:10px;margin:10px 0}
 textarea{width:100%;height:260px}
 pre{white-space:pre-wrap}
+input[type=text]{padding:6px;width:100%;max-width:400px}
 </style>
 </head>
 
@@ -198,7 +222,10 @@ pre{white-space:pre-wrap}
 <p id="authStatus"></p>
 </header>
 
-<section id="home"><h2>Bem-vindo</h2></section>
+<section id="home">
+<h2>Bem-vindo</h2>
+<p>Leia histórias reais escritas por pessoas reais.</p>
+</section>
 
 <section id="auth">
 <input id="email" placeholder="Email"><br><br>
@@ -208,7 +235,11 @@ pre{white-space:pre-wrap}
 <button onclick="logout()">Sair</button>
 </section>
 
-<section id="books"><div id="bookList"></div></section>
+<section id="books">
+<h2>Livros</h2>
+<input type="text" placeholder="Buscar por título ou autor..." oninput="searchBooks(this.value)">
+<div id="bookList"></div>
+</section>
 
 <section id="newBook">
 <input id="bookAuthor" placeholder="Autor"><br><br>
