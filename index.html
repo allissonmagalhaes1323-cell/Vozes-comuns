@@ -8,7 +8,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import {
   getFirestore, collection, addDoc, getDocs, doc,
-  deleteDoc, updateDoc, increment
+  deleteDoc, updateDoc, increment, getDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   getAuth, createUserWithEmailAndPassword,
@@ -59,7 +59,7 @@ textarea{width:100%;height:220px}
 
 <section id="login">
 <h2>Entrar / Criar Conta</h2>
-<input id="name" placeholder="Seu nome"><br><br>
+<input id="name" placeholder="Nome"><br><br>
 <input id="email" placeholder="Email"><br><br>
 <input id="password" type="password" placeholder="Senha"><br><br>
 <button onclick="login()">Entrar</button>
@@ -68,7 +68,7 @@ textarea{width:100%;height:220px}
 
 <section id="home">
 <h2>Bem-vindo</h2>
-<p>Histórias reais escritas por pessoas reais.</p>
+<p>Leia histórias reais ou publique a sua.</p>
 </section>
 
 <section id="books">
@@ -78,17 +78,13 @@ textarea{width:100%;height:220px}
 
 <section id="newBook">
 <h2>Novo Livro</h2>
-<input id="bookTitle" placeholder="Título do livro"><br><br>
-
-<h3>Gêneros</h3>
-<div id="genreList"></div><br>
-
-<button onclick="createBook()">Criar Livro</button>
+<input id="bookTitle" placeholder="Título"><br><br>
+<button onclick="createBook()">Criar</button>
 </section>
 
 <section id="chapters">
 <h2 id="bookName"></h2>
-<button onclick="show('newChapter')">Novo Capítulo</button>
+<button id="btnNewChapter" onclick="show('newChapter')">Novo Capítulo</button>
 <div id="chapterList"></div>
 <button onclick="show('books')">Voltar</button>
 </section>
@@ -101,10 +97,16 @@ textarea{width:100%;height:220px}
 <button onclick="show('chapters')">Cancelar</button>
 </section>
 
+<section id="read">
+<h2 id="rTitle"></h2>
+<pre id="rText"></pre>
+<button onclick="show('chapters')">Voltar</button>
+</section>
+
 <script type="module">
 import {
-  collection, addDoc, getDocs, doc,
-  updateDoc, increment
+  collection, addDoc, getDocs, deleteDoc, doc,
+  updateDoc, increment, getDoc
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import {
   onAuthStateChanged,
@@ -116,74 +118,42 @@ import {
 
 let currentUser = null;
 let currentBookId = null;
-
-const GENRES = [
-  "Ação","Aventura","Biografia","Crônica","Drama",
-  "Fantasia","Ficção Científica","Filosofia","História",
-  "Horror / Terror","Investigação / Mistério","LGBT+",
-  "Poesia","Política","Romance","Relatos Reais",
-  "Religião / Espiritualidade","Superação","Suspense",
-  "Vida Cotidiana"
-];
+let currentBookAuthor = null;
 
 function show(id){
   document.querySelectorAll("section").forEach(s=>s.style.display="none");
   document.getElementById(id).style.display="block";
-  if(id==="books") loadBooks();
 }
 window.show = show;
 
 onAuthStateChanged(auth,user=>{
+  currentUser = user;
   if(user){
-    currentUser = user;
-    userInfo.innerText = `Logado como: ${user.displayName} (${user.email})`;
-    renderGenres();
+    userInfo.innerText = `${user.displayName} (${user.email})`;
     show("home");
   }else{
     show("login");
   }
 });
 
-function renderGenres(){
-  genreList.innerHTML="";
-  GENRES.forEach(g=>{
-    genreList.innerHTML+=`
-      <label><input type="checkbox" value="${g}"> ${g}</label>
-    `;
-  });
-}
-
-window.login = async function(){
-  await signInWithEmailAndPassword(auth,email.value,password.value);
-}
-
-window.register = async function(){
-  const cred = await createUserWithEmailAndPassword(auth,email.value,password.value);
-  await updateProfile(cred.user,{displayName:name.value});
-}
-
-window.logout = async function(){
-  await signOut(auth);
-}
+window.login = ()=>signInWithEmailAndPassword(auth,email.value,password.value);
+window.register = async ()=>{
+  const c = await createUserWithEmailAndPassword(auth,email.value,password.value);
+  await updateProfile(c.user,{displayName:name.value});
+};
+window.logout = ()=>signOut(auth);
 
 async function createBook(){
   if(!currentUser) return alert("Faça login");
-
-  const tags = [...document.querySelectorAll("#genreList input:checked")]
-    .map(c=>c.value);
-
   await addDoc(collection(db,"books"),{
     title: bookTitle.value,
+    authorId: currentUser.uid,
     authorName: currentUser.displayName,
     authorEmail: currentUser.email,
-    authorId: currentUser.uid,
-    tags,
-    views: 0,
-    createdAt: Date.now()
+    views: 0
   });
-
   bookTitle.value="";
-  renderGenres();
+  loadBooks();
   show("books");
 }
 window.createBook = createBook;
@@ -193,25 +163,82 @@ async function loadBooks(){
   const snap = await getDocs(collection(db,"books"));
   snap.forEach(d=>{
     const b=d.data();
+    const isAuthor = currentUser && currentUser.uid===b.authorId;
     bookList.innerHTML+=`
       <div class="card">
         <b>${b.title}</b><br>
         <i>${b.authorName}</i><br>
         <small>${b.authorEmail}</small><br>
-        🏷️ ${(b.tags||[]).join(", ")}<br>
-        👁️ ${b.views||0}
-        <br><button onclick="openBook('${d.id}','${b.title}')">Abrir</button>
+        👁️ ${b.views}<br>
+        <button onclick="openBook('${d.id}')">Abrir</button>
+        ${isAuthor?`<button onclick="deleteBook('${d.id}')">Excluir Livro</button>`:""}
+      </div>
+    `;
+  });
+}
+window.loadBooks = loadBooks;
+
+window.openBook = async function(id){
+  currentBookId=id;
+  const ref=doc(db,"books",id);
+  const snap=await getDoc(ref);
+  const b=snap.data();
+  currentBookAuthor=b.authorId;
+  bookName.innerText=b.title;
+  btnNewChapter.style.display = (currentUser && currentUser.uid===b.authorId)?"inline":"none";
+  await updateDoc(ref,{views:increment(1)});
+  loadChapters();
+  show("chapters");
+};
+
+async function loadChapters(){
+  chapterList.innerHTML="";
+  const snap=await getDocs(collection(db,"books",currentBookId,"chapters"));
+  snap.forEach(d=>{
+    const c=d.data();
+    const isAuthor = currentUser && currentUser.uid===currentBookAuthor;
+    chapterList.innerHTML+=`
+      <div class="card">
+        <b>${c.title}</b><br>
+        <button onclick="read('${c.title}',\`${c.text}\`)">Ler</button>
+        ${isAuthor?`<button onclick="delChapter('${d.id}')">Excluir</button>`:""}
       </div>
     `;
   });
 }
 
-window.openBook = async function(id,title){
-  currentBookId=id;
-  bookName.innerText=title;
-  await updateDoc(doc(db,"books",id),{views:increment(1)});
+window.read = (t,txt)=>{
+  rTitle.innerText=t;
+  rText.innerText=txt;
+  show("read");
+};
+
+window.saveChapter = async ()=>{
+  if(currentUser.uid!==currentBookAuthor) return alert("Sem permissão");
+  await addDoc(collection(db,"books",currentBookId,"chapters"),{
+    title:chapterTitle.value,
+    text:chapterText.value
+  });
+  chapterTitle.value=chapterText.value="";
+  loadChapters();
   show("chapters");
-}
+};
+
+window.delChapter = async id=>{
+  if(confirm("Excluir capítulo?")){
+    await deleteDoc(doc(db,"books",currentBookId,"chapters",id));
+    loadChapters();
+  }
+};
+
+window.deleteBook = async id=>{
+  if(confirm("Excluir livro inteiro?")){
+    await deleteDoc(doc(db,"books",id));
+    loadBooks();
+  }
+};
+
+show("login");
 </script>
 
 </body>
